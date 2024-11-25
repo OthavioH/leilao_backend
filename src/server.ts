@@ -69,6 +69,8 @@ export class FastifyServer {
             // const { name } = request.body;
             // const userId = crypto.randomUUID();
 
+            this.broadcastAuctionStatus();
+
             reply.status(200).send({
                 multicastAddress: this.multicastAddress,
                 multicastPort: this.multicastPort,
@@ -112,11 +114,16 @@ export class FastifyServer {
             const message = JSON.parse(msg.toString()) as MulticastAction;
 
             if (message.action === 'JOIN') {
+                const user = message.data;
+                this.users.push(user);
                 this.broadcastAuctionStatus();
             }
             else if (message.action === 'BID') {
-                const bid = message.data;
-                this.processBid(bid, rinfo.address);
+                const data = message.data;
+
+                const bid = data.amount;
+                const userId = data.userId;
+                this.processBid(bid, userId);
             }
         });
 
@@ -126,25 +133,29 @@ export class FastifyServer {
             this.client.addMembership(this.multicastAddress);
         });
 
-        this.socketServer.bind(this.multicastPort, 'localhost');
-
-        // setTimeout(() => {
-        //     connectClient();
-        // }, 3000);
-
-        setTimeout(() => {
-            this.broadcastAuctionStatus();
-        }, 5000);
+        this.socketServer.bind(this.multicastPort, '0.0.0.0');
     }
 
-    private processBid(bid: number, address: string) {
+    private processBid(bid: number, userId: string) {
         if (this.itemLeilaoAtual) {
             if (this.itemLeilaoAtual.lanceAtual && bid >= this.itemLeilaoAtual.lanceAtual + this.itemLeilaoAtual.incrementoMinimoLance) {
-                this.itemLeilaoAtual.lanceAtual = bid;
-                console.log(`New bid registered: ${bid} by ${address}`);
+                console.log(`New bid registered: ${bid} by ${userId}`);
+                var user = this.users.find(u => u.id === userId);
+                console.log(user);
+                if (user) {
+                    console.log("Colocando lance");
+                    this.itemLeilaoAtual.lanceAtual = bid;
+                    this.itemLeilaoAtual.ofertanteAtual = user;
+                    console.log("Lance: " + this.itemLeilaoAtual.lanceAtual);
+                    console.log("Ofertante: " + this.itemLeilaoAtual.ofertanteAtual);
+                }
             } else if (!this.itemLeilaoAtual.lanceAtual && bid >= this.itemLeilaoAtual.lanceInicial + this.itemLeilaoAtual.incrementoMinimoLance) {
-                this.itemLeilaoAtual.lanceAtual = bid;
-                console.log(`New bid registered: ${bid} by ${address}`);
+                console.log(`New bid registered: ${bid} by ${userId}`);
+                var user = this.users.find(u => u.id === userId);
+                if (user) {
+                    this.itemLeilaoAtual.lanceAtual = bid;
+                    this.itemLeilaoAtual.ofertanteAtual = user;
+                }
             } else {
                 console.log(`Bid too low: ${bid}`);
             }
