@@ -8,6 +8,7 @@ import LeilaoItem from './models/leilao_item';
 import User from './models/user';
 import { MulticastAction } from './models/multicast_action';
 import { connectClient } from './client';
+import Router from './routes';
 
 
 export class FastifyServer {
@@ -46,7 +47,7 @@ export class FastifyServer {
         await this.httpServer.register(fastifyWebsocket);
 
         // Configurar rotas
-        this.setupRoutes();
+        new Router(this.httpServer, this.multicastAddress, this.multicastPort).setupRoutes();
 
         // Configurar socket multicast
         this.setupMulticast();
@@ -60,22 +61,6 @@ export class FastifyServer {
             this.httpServer.log.error(err);
             process.exit(1);
         }
-    }
-
-    async setupRoutes() {
-        this.httpServer.post<{
-            Body: { name: string; }
-        }>('/join', async (request, reply) => {
-            // const { name } = request.body;
-            // const userId = crypto.randomUUID();
-
-            this.broadcastAuctionStatus();
-
-            reply.status(200).send({
-                multicastAddress: this.multicastAddress,
-                multicastPort: this.multicastPort,
-            });
-        });
     }
 
     async setupMulticast() {
@@ -166,7 +151,7 @@ export class FastifyServer {
         this.broadcastAuctionStatus();
     }
 
-    private broadcastAuctionStatus() {
+    broadcastAuctionStatus() {
         const status = this.itemLeilaoAtual ? {
             action: 'AUCTION_STATUS',
             data: this.itemLeilaoAtual,
