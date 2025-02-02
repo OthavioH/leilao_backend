@@ -15,10 +15,9 @@ import Leilao from './models/leilao';
 export class FastifyServer {
     private httpServer: FastifyInstance;
     private socketServer: dgram.Socket;
-    private client: dgram.Socket;
     private multicastAddress = '239.255.255.250';
     private multicastPort = 27010;
-    private leilao : Leilao;
+    private leilao: Leilao;
     private itemLeilaoAtual?: LeilaoItem;
     private chaveSimetrica: Buffer;
 
@@ -27,7 +26,6 @@ export class FastifyServer {
         this.httpServer = Fastify({
             logger: true,
         });
-        this.client = dgram.createSocket('udp4');
         this.itemLeilaoAtual = {
             id: crypto.randomUUID(),
             nome: 'Cadeira de escritório',
@@ -101,7 +99,7 @@ export class FastifyServer {
                 const user = message.data;
                 this.leilao.users.push(user);
                 this.broadcastAuctionStatus();
-            } else if(message.action === 'LEAVE') {
+            } else if (message.action === 'LEAVE') {
                 const user = message.data;
                 this.leilao.users = this.leilao.users.filter(u => u.id !== user.id);
                 this.broadcastAuctionStatus();
@@ -113,12 +111,6 @@ export class FastifyServer {
                 const userId = data.userId;
                 this.processBid(bid, userId);
             }
-        });
-
-        this.client.bind(() => {
-            this.client.setBroadcast(true)
-            this.client.setMulticastTTL(128);
-            this.client.addMembership(this.multicastAddress);
         });
 
         this.socketServer.bind(this.multicastPort, '0.0.0.0');
@@ -164,7 +156,7 @@ export class FastifyServer {
         };
 
         const message = JSON.stringify(status);
-        this.client.send(message, 0, message.length + 1, this.multicastPort, this.multicastAddress, (err) => {
+        this.socketServer.send(message, 0, message.length + 1, this.multicastPort, this.multicastAddress, (err) => {
             if (err) {
                 console.error(`Error broadcasting auction status: ${err}`);
             } else {
