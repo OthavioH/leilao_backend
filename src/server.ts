@@ -9,6 +9,7 @@ import User from './models/user';
 import { MulticastAction } from './models/multicast_action';
 import { connectClient } from './client';
 import Router from './routes';
+import Leilao from './models/leilao';
 
 
 export class FastifyServer {
@@ -17,8 +18,8 @@ export class FastifyServer {
     private client: dgram.Socket;
     private multicastAddress = '239.255.255.250';
     private multicastPort = 27010;
+    private leilao : Leilao;
     private itemLeilaoAtual?: LeilaoItem;
-    private users: User[] = [];
     private chaveSimetrica: Buffer;
 
     constructor() {
@@ -30,9 +31,15 @@ export class FastifyServer {
         this.itemLeilaoAtual = {
             id: crypto.randomUUID(),
             nome: 'Cadeira de escritório',
+            imagem: 'https://abramais.vteximg.com.br/arquivos/ids/209496/cadeira-de-escritorio-franca-preto-diagonal.jpg?v=637967857589630000'
+        }
+        this.leilao = {
+            id: crypto.randomUUID(),
+            item: this.itemLeilaoAtual,
             lanceInicial: 100.0,
             incrementoMinimoLance: 10.0,
             endTime: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+            users: [],
         }
 
         this.socketServer = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -64,14 +71,6 @@ export class FastifyServer {
     }
 
     async setupMulticast() {
-        // this.socketServer.on('listening', () => {
-        //     var address = this.socketServer.address();
-        //     console.log('UDP Client listening on ' + address.address + ":" + address.port);
-        //     this.socketServer.setBroadcast(true)
-        //     this.socketServer.setMulticastTTL(128);
-        //     this.socketServer.addMembership(this.multicastAddress);
-        // });
-
         this.socketServer.on('listening', () => {
             var address = this.socketServer.address();
             console.log('UDP Client listening on ' + address.address + ":" + address.port);
@@ -100,7 +99,11 @@ export class FastifyServer {
 
             if (message.action === 'JOIN') {
                 const user = message.data;
-                this.users.push(user);
+                this.leilao.users.push(user);
+                this.broadcastAuctionStatus();
+            } else if(message.action === 'LEAVE') {
+                const user = message.data;
+                this.leilao.users = this.leilao.users.filter(u => u.id !== user.id);
                 this.broadcastAuctionStatus();
             }
             else if (message.action === 'BID') {
@@ -122,30 +125,26 @@ export class FastifyServer {
     }
 
     private processBid(bid: number, userId: string) {
-        if (this.itemLeilaoAtual) {
-            if (this.itemLeilaoAtual.lanceAtual && bid >= this.itemLeilaoAtual.lanceAtual + this.itemLeilaoAtual.incrementoMinimoLance) {
-                console.log(`New bid registered: ${bid} by ${userId}`);
-                var user = this.users.find(u => u.id === userId);
-                console.log(user);
-                if (user) {
-                    console.log("Colocando lance");
-                    this.itemLeilaoAtual.lanceAtual = bid;
-                    this.itemLeilaoAtual.ofertanteAtual = user;
-                    console.log("Lance: " + this.itemLeilaoAtual.lanceAtual);
-                    console.log("Ofertante: " + this.itemLeilaoAtual.ofertanteAtual);
-                }
-            } else if (!this.itemLeilaoAtual.lanceAtual && bid >= this.itemLeilaoAtual.lanceInicial + this.itemLeilaoAtual.incrementoMinimoLance) {
-                console.log(`New bid registered: ${bid} by ${userId}`);
-                var user = this.users.find(u => u.id === userId);
-                if (user) {
-                    this.itemLeilaoAtual.lanceAtual = bid;
-                    this.itemLeilaoAtual.ofertanteAtual = user;
-                }
-            } else {
-                console.log(`Bid too low: ${bid}`);
+        if (this.leilao.lanceAtual && bid >= this.leilao.lanceAtual + this.leilao.incrementoMinimoLance) {
+            console.log(`New bid registered: ${bid} by ${userId}`);
+            var user = this.leilao.users.find(u => u.id === userId);
+            console.log(user);
+            if (user) {
+                console.log("Colocando lance");
+                this.leilao.lanceAtual = bid;
+                this.leilao.ofertanteAtual = user;
+                console.log("Lance: " + this.leilao.lanceAtual);
+                console.log("Ofertante: " + this.leilao.ofertanteAtual);
+            }
+        } else if (!this.leilao.lanceAtual && bid >= this.leilao.lanceInicial + this.leilao.incrementoMinimoLance) {
+            console.log(`New bid registered: ${bid} by ${userId}`);
+            var user = this.leilao.users.find(u => u.id === userId);
+            if (user) {
+                this.leilao.lanceAtual = bid;
+                this.leilao.ofertanteAtual = user;
             }
         } else {
-            console.log(`Auction not active: ${bid}`);
+            console.log(`Bid too low: ${bid}`);
         }
 
         this.broadcastAuctionStatus();
@@ -154,7 +153,9 @@ export class FastifyServer {
     broadcastAuctionStatus() {
         const status = this.itemLeilaoAtual ? {
             action: 'AUCTION_STATUS',
-            data: this.itemLeilaoAtual,
+            data: {
+                leilao: this.leilao,
+            },
             active: true
         } : {
             action: 'AUCTION_STATUS',
