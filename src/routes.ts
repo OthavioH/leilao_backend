@@ -26,12 +26,12 @@ export default class Router {
             // const { name } = request.body;
             // const userId = crypto.randomUUID();
 
-            server.broadcastAuctionStatus();
-
+            
             reply.status(200).send({
                 multicastAddress: this.multicastAddress,
                 multicastPort: this.multicastPort,
             });
+            server.broadcastAuctionStatus();
         });
     }
 }

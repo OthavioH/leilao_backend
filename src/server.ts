@@ -16,11 +16,12 @@ export class FastifyServer {
     private httpServer: FastifyInstance;
     private socketServer: dgram.Socket;
     private multicastAddress = '239.255.255.250';
-    private multicastPort = 27010;
+    private multicastPort = 0;
     private leilao: Leilao;
     private itemLeilaoAtual?: LeilaoItem;
     private chaveSimetrica: Buffer;
     private leilaoEndTime: Date;
+    private router: Router | undefined;
 
     constructor() {
         this.chaveSimetrica = crypto.randomBytes(32);
@@ -67,7 +68,8 @@ export class FastifyServer {
         await this.httpServer.register(fastifyWebsocket);
 
         // Configurar rotas
-        new Router(this.httpServer, this.multicastAddress, this.multicastPort).setupRoutes();
+        this.router = new Router(this.httpServer, this.multicastAddress, this.multicastPort);
+        this.router.setupRoutes();
 
         // Configurar socket multicast
         this.setupMulticast();
@@ -86,6 +88,10 @@ export class FastifyServer {
     async setupMulticast() {
         this.socketServer.on('listening', () => {
             var address = this.socketServer.address();
+            this.multicastPort = address.port;
+            if(this.router != null){
+                this.router.multicastPort = address.port;
+            }
             console.log('UDP Client listening on ' + address.address + ":" + address.port);
             this.socketServer.setBroadcast(true)
             this.socketServer.setMulticastTTL(128);
@@ -128,7 +134,7 @@ export class FastifyServer {
             }
         });
 
-        this.socketServer.bind(this.multicastPort, '0.0.0.0');
+        this.socketServer.bind(0, '0.0.0.0');
     }
 
     private processBid(bid: number, userId: string) {
