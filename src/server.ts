@@ -20,6 +20,7 @@ export class FastifyServer {
     private leilao: Leilao;
     private itemLeilaoAtual?: LeilaoItem;
     private chaveSimetrica: Buffer;
+    private leilaoEndTime: Date;
 
     constructor() {
         this.chaveSimetrica = crypto.randomBytes(32);
@@ -31,16 +32,30 @@ export class FastifyServer {
             nome: 'Cadeira de escritório',
             imagem: 'https://abramais.vteximg.com.br/arquivos/ids/209496/cadeira-de-escritorio-franca-preto-diagonal.jpg?v=637967857589630000'
         }
+        this.leilaoEndTime = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
         this.leilao = {
             id: crypto.randomUUID(),
             item: this.itemLeilaoAtual,
             lanceInicial: 100.0,
             incrementoMinimoLance: 10.0,
-            endTime: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+            endTime: this.leilaoEndTime,
             users: [],
         }
 
         this.socketServer = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+        // Starts the timer for the auction
+        this.startAuctionTimer();
+    }
+
+    startAuctionTimer() {
+        const interval = setInterval(() => {
+            if (this.leilaoEndTime <= new Date()) {
+                console.log('Leilão encerrado');
+                clearInterval(interval);
+                this.itemLeilaoAtual = undefined;
+                this.broadcastAuctionStatus();
+            }
+        }, this.leilao.endTime.getTime() - Date.now());
     }
 
     async initialize() {
@@ -143,7 +158,7 @@ export class FastifyServer {
     }
 
     broadcastAuctionStatus() {
-        const status = this.itemLeilaoAtual ? {
+        const status = this.leilao ? {
             action: 'AUCTION_STATUS',
             data: {
                 leilao: this.leilao,
