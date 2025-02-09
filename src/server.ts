@@ -10,12 +10,13 @@ import { MulticastAction } from './models/multicast_action';
 import { connectClient } from './client';
 import Router from './routes';
 import Leilao from './models/leilao';
+import EncryptionService from './services/encryption_key_service';
 
 
 export class FastifyServer {
     private httpServer: FastifyInstance;
     private socketServer: dgram.Socket;
-    private multicastAddress = '239.255.255.250';
+    private multicastAddress = '230.0.0.0';
     private multicastPort = 0;
     private leilao: Leilao;
     private itemLeilaoAtual?: LeilaoItem;
@@ -68,7 +69,7 @@ export class FastifyServer {
         await this.httpServer.register(fastifyWebsocket);
 
         // Configurar rotas
-        this.router = new Router(this.httpServer, this.multicastAddress, this.multicastPort);
+        this.router = new Router(this.httpServer, this.multicastAddress, this.multicastPort,this.chaveSimetrica.toString("utf8"));
         this.router.setupRoutes();
 
         // Configurar socket multicast
@@ -111,10 +112,14 @@ export class FastifyServer {
             console.log('Client has disconnected');
         });
 
-        this.socketServer.on("message", (msg, rinfo) => {
+        this.socketServer.on("message", async (msg, rinfo) => {
             console.log(`server got: ${msg} from ${rinfo.address}:${rinfo.port}`);
 
-            const message = JSON.parse(msg.toString()) as MulticastAction;
+            const decoded_json = JSON.parse(msg.toString());
+
+            var data = await new EncryptionService().decryptMessageWithSymmetricKey(decoded_json.data, this.chaveSimetrica.toString("utf8"));
+
+            const message = JSON.parse(data) as MulticastAction;
 
             if (message.action === 'JOIN') {
                 const user = message.data;
@@ -163,7 +168,7 @@ export class FastifyServer {
         this.broadcastAuctionStatus();
     }
 
-    broadcastAuctionStatus() {
+    async broadcastAuctionStatus() {
         const status = this.leilao ? {
             action: 'AUCTION_STATUS',
             data: {
@@ -177,7 +182,8 @@ export class FastifyServer {
         };
 
         const message = JSON.stringify(status);
-        this.socketServer.send(message, 0, message.length + 1, this.multicastPort, this.multicastAddress, (err) => {
+        const encryptedMessage = await new EncryptionService().encryptMessageWithSymmetricKey(message, this.chaveSimetrica.toString("utf8"));
+        this.socketServer.send(encryptedMessage, 0, message.length + 1, this.multicastPort, this.multicastAddress, (err) => {
             if (err) {
                 console.error(`Error broadcasting auction status: ${err}`);
             } else {
