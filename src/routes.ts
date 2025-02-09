@@ -9,8 +9,6 @@ export default class Router {
     multicastPort: Number;
     simmetricKey: String;
 
-
-
     constructor(server: FastifyInstance, multicastAddress: String, multicastPort: Number, simmetricKey: String) {
         this.httpServer = server;
         this.multicastAddress = multicastAddress;
@@ -24,21 +22,25 @@ export default class Router {
 
     joinLeilaoRoute() {
         this.httpServer.post<{
-            Body: { message: string, user_id: string };
+            Body: { signature: string, user_id: string };
         }>('/join', async (request, reply) => {
-            const { message, user_id } = request.body;
+            const { signature, user_id } = request.body;
 
             try {
                 var encryptionService = new EncryptionService();
-                var decryptedMessage = await encryptionService.decryptMessage(message, user_id);
+                var decryptedMessage = await encryptionService.decryptMessageWithPublicKey(signature, user_id);
 
                 if (decryptedMessage == null || decryptedMessage.trim() == "") {
                     throw new Error('Erro ao descriptografar mensagem');
                 }
-                reply.status(200).send({
+
+                // Encrypt the symmetric key
+                var encryptedSimmetricKey = await encryptionService.encryptMessageWithPublicKey(this.simmetricKey, user_id);
+
+                reply.status(201).send({
                     multicastAddress: this.multicastAddress,
                     multicastPort: this.multicastPort,
-                    simmetricKey: this.simmetricKey,
+                    simmetricKey: encryptedSimmetricKey,
                 });
                 server.broadcastAuctionStatus();
             } catch (error) {

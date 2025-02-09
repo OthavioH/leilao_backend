@@ -2,6 +2,16 @@ import { createCipheriv, createDecipheriv, createSign, createVerify, publicDecry
 import * as fs from "fs";
 
 export default class EncryptionService {
+    async encryptMessageWithPublicKey(simmetricKey: String, user_id: string): Promise<string | null> {
+        const userKey = await this.getUserPublicKey(user_id);
+        if (!userKey) {
+            return null;
+        }
+
+        const encryptedMessage = publicDecrypt(userKey, Buffer.from(simmetricKey, "base64")).toString("base64");
+
+        return encryptedMessage;
+    }
 
     async verifyPrivateKey(privateKey: string) {
         // Assina uma mensagem com a chave privada
@@ -23,18 +33,31 @@ export default class EncryptionService {
         }
     }
 
-    async decryptMessage(message: string, userId: string): Promise<string | null> {
+    async decryptMessageWithPublicKey(message: string, userId: string): Promise<string | null> {
+        const userKey = await this.getUserPublicKey(userId);
+        if (!userKey) {
+            return null;
+        }
+
+        const decryptedMessage = publicDecrypt(userKey, Buffer.from(message, "base64")).toString("utf8");
+
+        return decryptedMessage;
+    }
+
+    async getUserPublicKey(userId: string): Promise<string | null> {
         const keys = JSON.parse(fs.readFileSync("../keys/valid_public_keys.json", "utf8"));
         const userKey = keys.find((key: any) => key.user_id === userId);
         if (!userKey) {
             return null;
         }
-        const publicKey = userKey.public_key;
 
-        const decryptedMessage = publicDecrypt(publicKey, Buffer.from(message, "base64")).toString("utf8");
-
-        return decryptedMessage;
+        var public_key = userKey.public_key;
+        public_key = public_key.replace("-----BEGIN PUBLIC KEY-----", "")
+        public_key = public_key.replace("-----END PUBLIC KEY-----", "")
+        public_key = public_key.replace("\n", "")
+        return public_key;
     }
+
 
     async encryptMessageWithSymmetricKey(message: string, symmetricKey: string): Promise<string> {
         const iv = randomBytes(16);
