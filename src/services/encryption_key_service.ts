@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createSign, createVerify, publicDecrypt, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createSign, createVerify, publicDecrypt, randomBytes, sign } from "crypto";
 import * as fs from "fs";
 
 export default class EncryptionService {
@@ -33,29 +33,27 @@ export default class EncryptionService {
         }
     }
 
-    async decryptMessageWithPublicKey(message: string, userId: string): Promise<string | null> {
+    async isMessageValid(signature: string, userId: string): Promise<boolean> {
         const userKey = await this.getUserPublicKey(userId);
+
         if (!userKey) {
-            return null;
+            return false;
         }
 
-        const decryptedMessage = publicDecrypt(userKey, Buffer.from(message, "base64")).toString("utf8");
+        console.log("User Key:", userKey);
+        console.log("Signature:", signature);
+        
+        const verifier = createVerify("SHA256");
+        verifier.update(signature);
+        verifier.end();
 
-        return decryptedMessage;
+        return verifier.verify(userKey, signature, "base64");
     }
 
     async getUserPublicKey(userId: string): Promise<string | null> {
-        const keys = JSON.parse(fs.readFileSync("../keys/valid_public_keys.json", "utf8"));
+        const keys = JSON.parse(fs.readFileSync("./src/keys/valid_public_keys.json", "utf8"));
         const userKey = keys.find((key: any) => key.user_id === userId);
-        if (!userKey) {
-            return null;
-        }
-
-        var public_key = userKey.public_key;
-        public_key = public_key.replace("-----BEGIN PUBLIC KEY-----", "")
-        public_key = public_key.replace("-----END PUBLIC KEY-----", "")
-        public_key = public_key.replace("\n", "")
-        return public_key;
+        return userKey.public_key ?? null;
     }
 
 

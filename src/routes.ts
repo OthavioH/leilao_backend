@@ -28,9 +28,9 @@ export default class Router {
 
             try {
                 var encryptionService = new EncryptionService();
-                var decryptedMessage = await encryptionService.decryptMessageWithPublicKey(signature, user_id);
+                var isMessageValid = await encryptionService.isMessageValid(signature, user_id);
 
-                if (decryptedMessage == null || decryptedMessage.trim() == "") {
+                if (!isMessageValid) {
                     throw new Error('Erro ao descriptografar mensagem');
                 }
 
@@ -40,11 +40,18 @@ export default class Router {
                 reply.status(201).send({
                     multicastAddress: this.multicastAddress,
                     multicastPort: this.multicastPort,
-                    simmetricKey: encryptedSimmetricKey,
+                    envelope: encryptedSimmetricKey,
                 });
                 server.broadcastAuctionStatus();
             } catch (error) {
-                reply.status(400).send({ error: 'Erro ao descriptografar mensagem' });
+                if(error instanceof Error){
+
+                    reply.status(400).send({ error: `Erro ao descriptografar mensagem: ${error}\n${error.stack}` });
+                } else {
+                    reply.status(400).send({ 
+                        error: 'Erro desconhecido ao descriptografar mensagem'
+                    });
+                }
             }
         });
     }
