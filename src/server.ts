@@ -24,6 +24,8 @@ export class FastifyServer {
     private leilaoEndTime: Date;
     private router: Router | undefined;
 
+    private newOfferTimeout: NodeJS.Timeout | undefined;
+
     constructor() {
         this.chaveSimetrica = crypto.randomBytes(32);
         this.httpServer = Fastify({
@@ -69,7 +71,7 @@ export class FastifyServer {
         await this.httpServer.register(fastifyWebsocket);
 
         // Configurar rotas
-        this.router = new Router(this.httpServer, this.multicastAddress, this.multicastPort,this.chaveSimetrica.toString("utf8"));
+        this.router = new Router(this.httpServer, this.multicastAddress, this.multicastPort, this.chaveSimetrica);
         this.router.setupRoutes();
 
         // Configurar socket multicast
@@ -90,7 +92,7 @@ export class FastifyServer {
         this.socketServer.on('listening', () => {
             var address = this.socketServer.address();
             this.multicastPort = address.port;
-            if(this.router != null){
+            if (this.router != null) {
                 this.router.multicastPort = address.port;
             }
             console.log('UDP Client listening on ' + address.address + ":" + address.port);
@@ -115,9 +117,11 @@ export class FastifyServer {
         this.socketServer.on("message", async (msg, rinfo) => {
             console.log(`server got: ${msg} from ${rinfo.address}:${rinfo.port}`);
 
-            const decoded_json = JSON.parse(msg.toString());
 
-            var data = await new EncryptionService().decryptMessageWithSymmetricKey(decoded_json.data, this.chaveSimetrica.toString("utf8"));
+            console.log("Mensagem recebida: " + msg.toString("utf8"));
+            var data = await new EncryptionService().decryptMessageWithSymmetricKey(msg.toString("utf8"), this.chaveSimetrica);
+            console.log("Mensagem descriptografada: " + data);
+
 
             const message = JSON.parse(data) as MulticastAction;
 
@@ -154,6 +158,10 @@ export class FastifyServer {
                 console.log("Lance: " + this.leilao.lanceAtual);
                 console.log("Ofertante: " + this.leilao.ofertanteAtual);
             }
+            this.newOfferTimeout?.unref();
+            this.newOfferTimeout = setTimeout(() => {
+                this.finishAuction();
+            }, 10000);
         } else if (!this.leilao.lanceAtual && bid >= this.leilao.lanceInicial + this.leilao.incrementoMinimoLance) {
             console.log(`New bid registered: ${bid} by ${userId}`);
             var user = this.leilao.users.find(u => u.id === userId);
@@ -161,11 +169,37 @@ export class FastifyServer {
                 this.leilao.lanceAtual = bid;
                 this.leilao.ofertanteAtual = user;
             }
+            this.newOfferTimeout?.unref();
+            this.newOfferTimeout = setTimeout(() => {
+                this.finishAuction();
+            }, 10000);
         } else {
             console.log(`Bid too low: ${bid}`);
         }
 
         this.broadcastAuctionStatus();
+    }
+
+    async finishAuction() {
+        const status = {
+            action: 'FINISH_AUCTION',
+            data: {
+                leilao: this.leilao,
+            },
+            active: false,
+        }
+
+        const message = JSON.stringify(status);
+
+        const encryptedMessage = await new EncryptionService().encryptMessageWithSymmetricKey(message, this.chaveSimetrica);
+        this.socketServer.send(encryptedMessage, 0, encryptedMessage.length, this.multicastPort, this.multicastAddress, (err) => {
+            if (err) {
+                console.error(`Error broadcasting auction status: ${err}`);
+            } else {
+                console.log('Auction status broadcasted successfully');
+            }
+        });
+
     }
 
     async broadcastAuctionStatus() {
@@ -182,8 +216,8 @@ export class FastifyServer {
         };
 
         const message = JSON.stringify(status);
-        const encryptedMessage = await new EncryptionService().encryptMessageWithSymmetricKey(message, this.chaveSimetrica.toString("utf8"));
-        this.socketServer.send(encryptedMessage, 0, message.length + 1, this.multicastPort, this.multicastAddress, (err) => {
+        const encryptedMessage = await new EncryptionService().encryptMessageWithSymmetricKey(message, this.chaveSimetrica);
+        this.socketServer.send(encryptedMessage, 0, encryptedMessage.length, this.multicastPort, this.multicastAddress, (err) => {
             if (err) {
                 console.error(`Error broadcasting auction status: ${err}`);
             } else {

@@ -1,39 +1,22 @@
-import { createCipheriv, createDecipheriv, createSign, createVerify, publicDecrypt, randomBytes, sign } from "crypto";
+import { constants, createCipheriv, createDecipheriv, createSign, createVerify, privateDecrypt, publicDecrypt, publicEncrypt, randomBytes, sign } from "crypto";
 import * as fs from "fs";
 
 export default class EncryptionService {
-    async encryptMessageWithPublicKey(simmetricKey: String, user_id: string): Promise<string | null> {
+    async encryptMessageWithPublicKey(simmetricKey: Buffer<ArrayBufferLike>, user_id: string): Promise<string | null> {
         const userKey = await this.getUserPublicKey(user_id);
         if (!userKey) {
             return null;
         }
 
-        const encryptedMessage = publicDecrypt(userKey, Buffer.from(simmetricKey, "base64")).toString("base64");
+        const encryptedMessage = publicEncrypt({
+            key: userKey,
+            padding: constants.RSA_PKCS1_PADDING,
+        }, simmetricKey).toString("base64");
 
         return encryptedMessage;
     }
 
-    async verifyPrivateKey(privateKey: string) {
-        // Assina uma mensagem com a chave privada
-        const message = "Teste de assinatura de chave";
-        const signer = createSign("SHA256");
-        signer.update(message);
-        signer.end();
-        const assinatura = signer.sign(privateKey, "base64");
-
-        // Verifica a assinatura com a chave pública
-        const verifier = createVerify("SHA256");
-        verifier.update(message);
-        verifier.end();
-
-        if (verifier.verify(privateKey, assinatura, "base64")) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    async isMessageValid(signature: string, userId: string): Promise<boolean> {
+    async isMessageValid(plain_text: string, signature: string, userId: string): Promise<boolean> {
         const userKey = await this.getUserPublicKey(userId);
 
         if (!userKey) {
@@ -42,12 +25,11 @@ export default class EncryptionService {
 
         console.log("User Key:", userKey);
         console.log("Signature:", signature);
-        
-        const verifier = createVerify("SHA256");
-        verifier.update(signature);
-        verifier.end();
 
-        return verifier.verify(userKey, signature, "base64");
+        const verifier = createVerify("SHA256");
+        verifier.update(plain_text);
+
+        return verifier.verify(userKey, Buffer.from(signature, "base64"));
     }
 
     async getUserPublicKey(userId: string): Promise<string | null> {
@@ -57,16 +39,21 @@ export default class EncryptionService {
     }
 
 
-    async encryptMessageWithSymmetricKey(message: string, symmetricKey: string): Promise<string> {
+    async encryptMessageWithSymmetricKey(message: string, symmetricKey: Buffer<ArrayBufferLike>): Promise<string> {
         const iv = randomBytes(16);
         const cipher = createCipheriv("aes-256-cbc", symmetricKey, iv);
-        let encryptedMessage = cipher.update(message, "utf8", "base64");
+        let encryptedMessage = cipher.update(message, "utf-8", "base64");
         encryptedMessage += cipher.final("base64");
+        console.log("Encrypted message:", encryptedMessage);
 
-        return iv.toString("base64") + ":" + encryptedMessage;
+        var encrypted = iv.toString("base64") + ":" + encryptedMessage;
+
+        // var decrypted = await this.decryptMessageWithSymmetricKey(encrypted, symmetricKey);
+
+        return encrypted;
     }
 
-    async decryptMessageWithSymmetricKey(encryptedMessage: string, symmetricKey: string): Promise<string> {
+    async decryptMessageWithSymmetricKey(encryptedMessage: string, symmetricKey: Buffer<ArrayBufferLike>): Promise<string> {
         const [ivBase64, encryptedBase64] = encryptedMessage.split(":");
 
         if (!ivBase64 || !encryptedBase64) {
@@ -77,6 +64,7 @@ export default class EncryptionService {
         const encrypted = Buffer.from(encryptedBase64, "base64");
 
         const decipher = createDecipheriv("aes-256-cbc", symmetricKey, iv);
+        decipher.setAutoPadding(true);
         let decrypted = decipher.update(encrypted);
         decrypted = Buffer.concat([decrypted, decipher.final()]);
 
