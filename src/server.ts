@@ -36,7 +36,7 @@ export class FastifyServer {
             nome: 'Cadeira de escritório',
             imagem: 'https://abramais.vteximg.com.br/arquivos/ids/209496/cadeira-de-escritorio-franca-preto-diagonal.jpg?v=637967857589630000'
         }
-        this.leilaoEndTime = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+        this.leilaoEndTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         this.leilao = {
             id: crypto.randomUUID(),
             item: this.itemLeilaoAtual,
